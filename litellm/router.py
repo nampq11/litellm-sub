@@ -9528,7 +9528,7 @@ class Router:
                 header_cooldown = litellm.utils._get_retry_after_from_exception_header(
                     response_headers=exception_headers
                 )
-            ban_error_text: Final = str(exception) if isinstance(exception, BaseException) else ""
+            ban_error_text: Final = str(cast("BaseException | None", exception))  # cast-ok: untyped kwargs exception
             validated_deployment_cooldown: Final[float | None] = (
                 deployment_cooldown if isinstance(deployment_cooldown, (int, float)) else None
             )
