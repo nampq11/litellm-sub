@@ -61,9 +61,9 @@ def _optional_int(value: JsonValue | None) -> int | None:
 
 
 class AntigravityConfig(BaseConfig):
-    def __init__(self) -> None:
+    def __init__(self, authenticator: Authenticator | None = None) -> None:
         super().__init__()
-        self.authenticator: Final[Authenticator] = Authenticator()
+        self.authenticator: Final[Authenticator] = authenticator if authenticator is not None else Authenticator()
 
     def get_supported_openai_params(self, model: str) -> list[str]:  # mutable-ok: matches BaseConfig signature
         return list(SUPPORTED_OPENAI_PARAMS)

@@ -104,11 +104,22 @@ class TestAntigravityTransformation:
         assert transformed.usage.completion_tokens == 4
         assert transformed.usage.total_tokens == 14
 
-    def test_transform_response_429_triggers_quota_error(self, config):
+    def test_transform_response_429_triggers_quota_error(self):
+        recorded: list[frozenset[str]] = []
+
+        class RecordingAuthenticator:
+            def failover_to_next_account(self, tried_tokens: frozenset[str]) -> None:
+                recorded.append(tried_tokens)
+
+        config = AntigravityConfig(authenticator=RecordingAuthenticator())
         mock_response = httpx.Response(
             status_code=429,
             text='{"error": {"code": 429, "message": "Quota exceeded"}}',
-            request=httpx.Request("POST", "https://daily-cloudcode-pa.googleapis.com"),
+            request=httpx.Request(
+                "POST",
+                "https://daily-cloudcode-pa.googleapis.com",
+                headers={"Authorization": "Bearer tok-exhausted"},
+            ),
         )
         model_response = ModelResponse()
 
@@ -120,9 +131,11 @@ class TestAntigravityTransformation:
                 logging_obj=MagicMock(),
                 request_data={},
                 messages=[],
-                optional_params={"antigravity_token": "tok-test"},
+                optional_params={"antigravity_token": "tok-exhausted"},
                 litellm_params={},
             )
+
+        assert recorded == [frozenset({"tok-exhausted"})]
 
     def test_transform_streaming_chunk(self, config):
         raw_sse = 'data: {"response": {"candidates": [{"content": {"parts": [{"text": "chunk one"}]}, "finishReason": null}]}}'
