@@ -6,20 +6,22 @@ from litellm.litellm_core_utils.cli_compat.ban_detection import (
     is_account_deactivated,
 )
 from litellm.litellm_core_utils.cli_compat.fingerprints import (
+    BODY_ADAPTER,
     CLI_FINGERPRINTS,
+    HEADERS_ADAPTER,
     CliFingerprint,
     compat_body,
     compat_headers,
     fingerprint_for,
     order_fields,
     order_headers,
-    validated_body,
-    validated_headers,
 )
 
 __all__: Final[tuple[str, ...]] = (
     "ACCOUNT_DEACTIVATED_SIGNALS",
+    "BODY_ADAPTER",
     "CLI_FINGERPRINTS",
+    "HEADERS_ADAPTER",
     "CliFingerprint",
     "ban_cooldown_seconds",
     "compat_body",
@@ -28,6 +30,4 @@ __all__: Final[tuple[str, ...]] = (
     "is_account_deactivated",
     "order_fields",
     "order_headers",
-    "validated_body",
-    "validated_headers",
 )

@@ -116,13 +116,15 @@ CLI_FINGERPRINTS: Final[Mapping[str, CliFingerprint]] = MappingProxyType(
 )
 
 
-def order_headers(headers: Mapping[str, object], order: Sequence[str]) -> Mapping[str, object]:
-    by_lower: Final[Mapping[str, tuple[str, object]]] = {key.lower(): (key, headers[key]) for key in headers}
-    front: Final[Mapping[str, object]] = {
+def order_headers(headers: Mapping[str, str | bytes], order: Sequence[str]) -> Mapping[str, str | bytes]:
+    by_lower: Final[Mapping[str, tuple[str, str | bytes]]] = {key.lower(): (key, headers[key]) for key in headers}
+    front: Final[Mapping[str, str | bytes]] = {
         by_lower[wanted.lower()][0]: by_lower[wanted.lower()][1] for wanted in order if wanted.lower() in by_lower
     }
     order_lower: Final[frozenset[str]] = frozenset(name.lower() for name in order)
-    rest: Final[Mapping[str, object]] = {key: value for key, value in headers.items() if key.lower() not in order_lower}
+    rest: Final[Mapping[str, str | bytes]] = {
+        key: value for key, value in headers.items() if key.lower() not in order_lower
+    }
     return {**front, **rest}
 
 
@@ -153,18 +155,8 @@ def _resolved_user_agent(fingerprint: CliFingerprint) -> str | None:
     return os.getenv(fingerprint.user_agent_env) or fingerprint.user_agent
 
 
-_VALIDATED_HEADERS: Final = TypeAdapter(dict[str, str | bytes])
-_VALIDATED_BODY: Final = TypeAdapter(dict[str, object])
-
-
-def validated_headers(value: object) -> Mapping[str, str | bytes]:
-    """Boundary validation for untyped header dicts (same str/bytes contract httpx enforces)."""
-    return _VALIDATED_HEADERS.validate_python(value)
-
-
-def validated_body(value: object) -> Mapping[str, object]:
-    """Boundary validation for untyped request body dicts."""
-    return _VALIDATED_BODY.validate_python(value)
+HEADERS_ADAPTER: Final = TypeAdapter(dict[str, str | bytes])
+BODY_ADAPTER: Final = TypeAdapter(dict[str, object])
 
 
 def compat_headers(provider: str, headers: Mapping[str, str | bytes]) -> Mapping[str, str | bytes]:
