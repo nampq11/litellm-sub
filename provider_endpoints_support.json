@@ -178,6 +178,29 @@
         "interactions": true
       }
     },
+    "antigravity": {
+      "display_name": "Antigravity AI Pro (`antigravity`)",
+      "url": "https://github.com/nampq11/litellm-sub/tree/main/litellm/llms/antigravity",
+      "endpoints": {
+        "chat_completions": true,
+        "messages": false,
+        "responses": false,
+        "embeddings": false,
+        "image_generations": false,
+        "audio_transcriptions": false,
+        "audio_speech": false,
+        "moderations": false,
+        "batches": false,
+        "rerank": false,
+        "interactions": false,
+        "a2a": false,
+        "vector_stores_search": false,
+        "count_tokens": false,
+        "rag_ingest": false,
+        "realtime": false,
+        "generateContent": false
+      }
+    },
     "apertis": {
       "display_name": "Apertis (`apertis`)",
       "endpoints": {
