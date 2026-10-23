@@ -26,6 +26,7 @@ from .parallel_request_limiter_v3 import (  # noqa: F401  # backwards-compatible
 )
 from .prompt_cache_prediction import PromptCacheObserver
 from .responses_id_security import ResponsesIDSecurity
+from .rtk_token_saver import PROXY_RTKTokenSaver
 from .sensitive_data_routing import (  # noqa: F401  # backwards-compatible package export
     PROXY_SensitiveDataRoutingHandler,
     _PROXY_SensitiveDataRoutingHandler,  # pyright: ignore[reportPrivateUsage]  # backwards-compatible package export
@@ -45,6 +46,7 @@ PROXY_HOOKS: Final = {
     "sensitive_data_routing": PROXY_SensitiveDataRoutingHandler,
     "prompt_cache_prediction": PromptCacheObserver,
     "autorouter_baseline_cache": AutoRouterBaselineCache,
+    "rtk_token_saver": PROXY_RTKTokenSaver,
 }
 
 ## FEATURE FLAG HOOKS ##
