@@ -843,6 +843,11 @@ def _get_openai_compatible_provider_info(
             dynamic_api_key,
             custom_llm_provider,
         ) = litellm.ChatGPTConfig().get_openai_compatible_provider_info(model, api_base, api_key, custom_llm_provider)
+    elif custom_llm_provider == "antigravity":
+        from litellm.llms.antigravity.common_utils import ANTIGRAVITY_API_BASE
+
+        api_base = api_base or ANTIGRAVITY_API_BASE  # rebind-ok: resolves provider args in place
+        dynamic_api_key = api_key  # rebind-ok: resolves provider args in place
     elif custom_llm_provider == "novita":
         api_base = api_base or get_secret("NOVITA_API_BASE") or "https://api.novita.ai/v3/openai"
         dynamic_api_key = api_key or get_secret_str("NOVITA_API_KEY")

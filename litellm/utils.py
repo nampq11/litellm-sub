@@ -8873,6 +8873,7 @@ class ProviderConfigManager:
             LlmProviders.GITHUB: (lambda: litellm.GithubChatConfig(), False),
             LlmProviders.COMPACTIFAI: (lambda: litellm.CompactifAIChatConfig(), False),
             LlmProviders.GITHUB_COPILOT: (lambda: litellm.GithubCopilotConfig(), False),
+            LlmProviders.ANTIGRAVITY: (lambda: litellm.AntigravityConfig(), False),
             LlmProviders.CHATGPT: (lambda: litellm.ChatGPTConfig(), False),
             LlmProviders.GIGACHAT: (lambda: litellm.GigaChatConfig(), False),
             LlmProviders.RAGFLOW: (lambda: litellm.RAGFlowConfig(), False),
