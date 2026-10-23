@@ -52,6 +52,8 @@ from litellm.llms.bedrock.messages.invoke_transformations.anthropic_claude3_tran
     AmazonAnthropicClaudeMessagesConfig,
 )
 from litellm.llms.bedrock.files.transformation import BedrockFilesConfig
+from litellm.llms.anthropic.chat.transformation import AnthropicConfig
+from litellm.llms.anthropic.skills.transformation import AnthropicSkillsConfig
 from litellm.llms.anthropic.skills.transformation import AnthropicSkillsConfig
 from litellm.llms.openai.evals.transformation import OpenAIEvalsConfig
 from litellm.llms.mistral.files.transformation import MistralFilesConfig
@@ -1469,6 +1471,84 @@ async def test_async_anthropic_messages_handler_passes_litellm_metadata():
 
     assert "litellm_metadata" in kwargs_arg
     assert kwargs_arg["litellm_metadata"]["model_info"] == custom_model_info
+
+
+@pytest.mark.asyncio
+async def test_make_common_async_call_applies_cli_compat_wire_image(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """With CLI compat enabled, the upstream call must carry the claude-cli header order,
+    the claude-cli User-Agent, and the claude-cli JSON body field order."""
+    monkeypatch.setenv("LITELLM_CLI_COMPAT_PROVIDERS", "anthropic")
+    monkeypatch.delenv("CLAUDE_USER_AGENT", raising=False)
+    captured: Final[list[httpx.Request]] = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"id": "msg_1", "content": []})
+
+    handler = BaseLLMHTTPHandler()
+    logging_obj = Mock()
+    logging_obj.model_call_details = {}
+
+    response = await handler._make_common_async_call(
+        async_httpx_client=AsyncHTTPHandler(transport=httpx.MockTransport(capture)),
+        provider_config=AnthropicConfig(),
+        api_base="https://api.anthropic.com/v1/messages",
+        headers={
+            "accept": "application/json",
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+            "x-api-key": "sk-test",
+        },
+        data={"stream": False, "max_tokens": 64, "model": "claude-sonnet-4-6", "messages": []},
+        timeout=30.0,
+        litellm_params={},
+        logging_obj=logging_obj,
+    )
+
+    assert response.status_code == 200
+    sent_headers: Final[list[str]] = list(captured[0].headers.keys())
+    assert sent_headers.index("accept") < sent_headers.index("content-type")
+    assert sent_headers.index("content-type") < sent_headers.index("anthropic-version")
+    assert sent_headers.index("x-api-key") > sent_headers.index("anthropic-version")
+    assert captured[0].headers["user-agent"] == "claude-cli/2.1.280 (external, cli)"
+    sent_body: Final[dict] = json.loads(captured[0].content)
+    assert list(sent_body) == ["model", "messages", "max_tokens", "stream"]
+
+
+@pytest.mark.asyncio
+async def test_make_common_async_call_skips_compat_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.delenv("LITELLM_CLI_COMPAT_PROVIDERS", raising=False)
+    monkeypatch.delenv("LITELLM_CLI_COMPAT_ALL", raising=False)
+    captured: Final[list[httpx.Request]] = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"id": "msg_1", "content": []})
+
+    handler = BaseLLMHTTPHandler()
+    logging_obj = Mock()
+    logging_obj.model_call_details = {}
+
+    response = await handler._make_common_async_call(
+        async_httpx_client=AsyncHTTPHandler(transport=httpx.MockTransport(capture)),
+        provider_config=AnthropicConfig(),
+        api_base="https://api.anthropic.com/v1/messages",
+        headers={"content-type": "application/json", "x-api-key": "sk-test"},
+        data={"stream": False, "model": "claude-sonnet-4-6", "messages": []},
+        timeout=30.0,
+        litellm_params={},
+        logging_obj=logging_obj,
+    )
+
+    assert response.status_code == 200
+    assert captured[0].headers["user-agent"] != "claude-cli/2.1.280 (external, cli)"
+    assert captured[0].content == json.dumps(
+        {"stream": False, "model": "claude-sonnet-4-6", "messages": []}
+    ).encode()
 
 
 @pytest.mark.asyncio

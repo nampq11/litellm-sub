@@ -33,6 +33,7 @@ from litellm.router_utils.cooldown_handlers import (
     cast_exception_status_to_int,
     get_cooldown_deployments,
     mark_advisor_orchestration_failure,
+    resolve_cooldown_time,
     should_cooldown_based_on_allowed_fails_policy,
 )
 from litellm.router_utils.fallback_event_handlers import (
@@ -1907,6 +1908,80 @@ def test_is_cooldown_required_for_account_errors(testing_litellm_router, excepti
         )
         is True
     )
+
+
+@pytest.mark.usefixtures("_vcr_outcome_gate", "setup_and_teardown")
+def test_is_cooldown_required_for_banned_account_at_403(testing_litellm_router):
+    """A 403 carrying ban wording must park the deployment even though plain 403s normally do not."""
+    assert (
+        _is_cooldown_required(
+            litellm_router_instance=testing_litellm_router,
+            model_id="test_deployment",
+            exception_status=403,
+            exception_str='{"error": "This account is deactivated for violation of ToS"}',
+        )
+        is True
+    )
+
+
+@pytest.mark.usefixtures("_vcr_outcome_gate", "setup_and_teardown")
+def test_is_cooldown_required_ignores_transient_403_wording(testing_litellm_router):
+    assert (
+        _is_cooldown_required(
+            litellm_router_instance=testing_litellm_router,
+            model_id="test_deployment",
+            exception_status=403,
+            exception_str="rate limit exceeded, retry after 60 seconds",
+        )
+        is False
+    )
+
+
+class TestResolveCooldownTime:
+    def test_banned_account_wins_over_shorter_hints(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("LITELLM_BAN_COOLDOWN_SECONDS", "3600")
+
+        resolved = resolve_cooldown_time(
+            error_text="this account is deactivated",
+            deployment_cooldown=5.0,
+            header_cooldown=30.0,
+            default_cooldown=60.0,
+        )
+
+        assert resolved == 3600.0
+
+    def test_deployment_cooldown_wins_over_header_and_default(self):
+        assert (
+            resolve_cooldown_time(
+                error_text="internal error",
+                deployment_cooldown=5.0,
+                header_cooldown=30.0,
+                default_cooldown=60.0,
+            )
+            == 5.0
+        )
+
+    def test_header_cooldown_wins_over_default(self):
+        assert (
+            resolve_cooldown_time(
+                error_text="internal error",
+                deployment_cooldown=None,
+                header_cooldown=30.0,
+                default_cooldown=60.0,
+            )
+            == 30.0
+        )
+
+    def test_router_default_when_nothing_hints(self):
+        assert (
+            resolve_cooldown_time(
+                error_text="internal error",
+                deployment_cooldown=None,
+                header_cooldown=None,
+                default_cooldown=60.0,
+            )
+            == 60.0
+        )
 
 
 @pytest.mark.usefixtures("_vcr_outcome_gate", "setup_and_teardown")

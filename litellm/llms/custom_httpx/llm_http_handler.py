@@ -49,6 +49,7 @@ from litellm.litellm_core_utils.audio_utils.subtitle_utils import (
     SUBTITLE_RESPONSE_FORMATS,
     synthesize_subtitle_document,
 )
+from litellm.litellm_core_utils.cli_compat import compat_body, compat_headers, validated_body, validated_headers
 from litellm.litellm_core_utils.core_helpers import set_provider_response_headers_in_hidden_params
 from litellm.litellm_core_utils.dot_notation_indexing import delete_nested_value
 from litellm.litellm_core_utils.get_litellm_params import AWS_CREDENTIAL_KWARGS_KEYS
@@ -547,10 +548,15 @@ class BaseLLMHTTPHandler:
         response: httpx.Response | None = None
         for i in range(max(max_retry_on_unprocessable_entity_error, 1)):
             try:
+                outbound_headers = compat_headers(provider_config.custom_llm_provider or "", validated_headers(headers))
                 response = await async_httpx_client.post(
                     url=api_base,
-                    headers=headers,
-                    data=(signed_json_body if signed_json_body is not None else json.dumps(data)),
+                    headers=dict(outbound_headers),
+                    data=(
+                        signed_json_body
+                        if signed_json_body is not None
+                        else compat_body(provider_config.custom_llm_provider or "", validated_body(data))
+                    ),
                     timeout=timeout,
                     stream=stream,
                     logging_obj=logging_obj,
@@ -597,10 +603,15 @@ class BaseLLMHTTPHandler:
 
         for i in range(max(max_retry_on_unprocessable_entity_error, 1)):
             try:
+                outbound_headers = compat_headers(provider_config.custom_llm_provider or "", validated_headers(headers))
                 response = sync_httpx_client.post(
                     url=api_base,
-                    headers=headers,
-                    data=(signed_json_body if signed_json_body is not None else json.dumps(data)),
+                    headers=dict(outbound_headers),
+                    data=(
+                        signed_json_body
+                        if signed_json_body is not None
+                        else compat_body(provider_config.custom_llm_provider or "", validated_body(data))
+                    ),
                     timeout=timeout,
                     stream=stream,
                     logging_obj=logging_obj,

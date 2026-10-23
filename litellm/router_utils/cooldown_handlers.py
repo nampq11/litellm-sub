@@ -27,6 +27,7 @@ from litellm.constants import (
     SINGLE_DEPLOYMENT_TRAFFIC_FAILURE_THRESHOLD,
 )
 from litellm.exceptions import MidStreamFallbackError
+from litellm.litellm_core_utils.cli_compat import ban_cooldown_seconds, is_account_deactivated
 from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
 from litellm.litellm_core_utils.litellm_logging import mask_api_base_credentials
 from litellm.router_utils.cooldown_cache import ROUTER_COOLDOWNS_TARGET, CooldownCacheValue
@@ -263,6 +264,9 @@ def _is_cooldown_required(
                 if ignored_string in exception_str:
                     return False
 
+        if exception_str is not None and is_account_deactivated(exception_str):
+            return True
+
         if isinstance(exception_status, str):
             if len(exception_status) == 0:
                 return False
@@ -287,6 +291,28 @@ def _is_cooldown_required(
     except Exception:
         # Catch all - if any exceptions default to cooling down
         return True
+
+
+def resolve_cooldown_time(
+    error_text: str,
+    deployment_cooldown: float | None,
+    header_cooldown: float | None,
+    default_cooldown: float,
+) -> float:
+    """Resolve the cooldown for a failed deployment.
+
+    Priority: banned account > deployment config > Retry-After header > router
+    default. A banned account stays parked for the ban cooldown regardless of a
+    shorter hint, because the upstream keeps rejecting it until an operator
+    intervenes.
+    """
+    if is_account_deactivated(error_text):
+        return float(ban_cooldown_seconds())
+    if deployment_cooldown is not None and deployment_cooldown >= 0:
+        return deployment_cooldown
+    if header_cooldown is not None and header_cooldown >= 0:
+        return header_cooldown
+    return default_cooldown
 
 
 def _is_per_user_provider_request(request_kwargs: Mapping[str, object]) -> bool:

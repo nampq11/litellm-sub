@@ -241,6 +241,7 @@ from litellm.router_utils.cooldown_handlers import (
     is_caller_scoped_auth_failure,
     is_caller_timeout_408,
     is_video_lookup_not_found,
+    resolve_cooldown_time,
     set_cooldown_deployments,
 )
 from litellm.router_utils.deployment_pricing import deployment_pricing_models
@@ -9517,7 +9518,7 @@ class Router:
                 original_exception=exception
             )
 
-            # Determine cooldown time with priority: deployment config > response header > router default
+            # Determine cooldown time with priority: banned account > deployment config > response header > router default
             deployment_cooldown: Final = _first_present(
                 _model_info if isinstance(_model_info, dict) else None, litellm_params, key="cooldown_time"
             )
@@ -9527,18 +9528,16 @@ class Router:
                 header_cooldown = litellm.utils._get_retry_after_from_exception_header(
                     response_headers=exception_headers
                 )
-            ##############################################
-            # Logic to determine cooldown time
-            # 1. Check if a cooldown time is set in the deployment config
-            # 2. Check if a cooldown time is set in the response header
-            # 3. If no cooldown time is set, use the router default cooldown time
-            ##############################################
-            if deployment_cooldown is not None and deployment_cooldown >= 0:
-                _time_to_cooldown = deployment_cooldown
-            elif header_cooldown is not None and header_cooldown >= 0:
-                _time_to_cooldown = header_cooldown
-            else:
-                _time_to_cooldown = self.cooldown_time
+            ban_error_text: Final = str(exception) if isinstance(exception, BaseException) else ""
+            validated_deployment_cooldown: Final[float | None] = (
+                deployment_cooldown if isinstance(deployment_cooldown, (int, float)) else None
+            )
+            _time_to_cooldown: Final = resolve_cooldown_time(
+                error_text=ban_error_text,
+                deployment_cooldown=validated_deployment_cooldown,
+                header_cooldown=header_cooldown,
+                default_cooldown=self.cooldown_time,
+            )
 
             if isinstance(_model_info, dict):
                 deployment_id: Final[str | None] = _model_info.get("id")
