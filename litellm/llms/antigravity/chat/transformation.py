@@ -61,9 +61,9 @@ def _optional_int(value: JsonValue | None) -> int | None:
 
 
 class AntigravityConfig(BaseConfig):
-    def __init__(self) -> None:
+    def __init__(self, authenticator: Authenticator | None = None) -> None:
         super().__init__()
-        self.authenticator: Final[Authenticator] = Authenticator()
+        self.authenticator: Final[Authenticator] = authenticator if authenticator is not None else Authenticator()
 
     def get_supported_openai_params(self, model: str) -> list[str]:  # mutable-ok: matches BaseConfig signature
         return list(SUPPORTED_OPENAI_PARAMS)
@@ -225,13 +225,9 @@ class AntigravityConfig(BaseConfig):
         resp_data: Final[JsonObject] = resp_data_val if isinstance(resp_data_val, Mapping) else parsed
 
         candidates_val: Final[JsonValue | None] = resp_data.get("candidates")
-        candidates_list: Final[Sequence[JsonValue]] = (
-            candidates_val if isinstance(candidates_val, Sequence) else ()
-        )
+        candidates_list: Final[Sequence[JsonValue]] = candidates_val if isinstance(candidates_val, Sequence) else ()
         first_candidate: Final[JsonValue | None] = candidates_list[0] if candidates_list else None
-        candidate: Final[JsonObject] = (
-            first_candidate if isinstance(first_candidate, Mapping) else MappingProxyType({})
-        )
+        candidate: Final[JsonObject] = first_candidate if isinstance(first_candidate, Mapping) else MappingProxyType({})
 
         content_val: Final[JsonValue | None] = candidate.get("content")
         content_obj: Final[JsonObject] = content_val if isinstance(content_val, Mapping) else MappingProxyType({})
@@ -265,9 +261,7 @@ class AntigravityConfig(BaseConfig):
         if isinstance(usage_meta_val, Mapping):
             prompt_cnt: Final[int] = _optional_int(usage_meta_val.get("promptTokenCount")) or 0
             candidate_cnt: Final[int] = _optional_int(usage_meta_val.get("candidatesTokenCount")) or 0
-            total_cnt: Final[int] = (
-                _optional_int(usage_meta_val.get("totalTokenCount")) or (prompt_cnt + candidate_cnt)
-            )
+            total_cnt: Final[int] = _optional_int(usage_meta_val.get("totalTokenCount")) or (prompt_cnt + candidate_cnt)
             setattr(  # noqa: B010  # ModelResponse dynamic usage attribute
                 model_response,
                 "usage",
@@ -290,9 +284,7 @@ class AntigravityConfig(BaseConfig):
             return None
         payload: Final[str] = trimmed.removeprefix("data:").strip()
         if payload == "[DONE]":
-            return ModelResponseStream(
-                choices=[StreamingChoices(delta=Delta(), finish_reason="stop", index=0)]
-            )
+            return ModelResponseStream(choices=[StreamingChoices(delta=Delta(), finish_reason="stop", index=0)])
 
         try:
             chunk_json: Final[JsonObject] = _JSON_OBJECT_ADAPTER.validate_json(payload)
@@ -302,13 +294,9 @@ class AntigravityConfig(BaseConfig):
         resp_data_val: Final[JsonValue | None] = chunk_json.get("response")
         resp_data: Final[JsonObject] = resp_data_val if isinstance(resp_data_val, Mapping) else chunk_json
         candidates_val: Final[JsonValue | None] = resp_data.get("candidates")
-        candidates_list: Final[Sequence[JsonValue]] = (
-            candidates_val if isinstance(candidates_val, Sequence) else ()
-        )
+        candidates_list: Final[Sequence[JsonValue]] = candidates_val if isinstance(candidates_val, Sequence) else ()
         first_candidate: Final[JsonValue | None] = candidates_list[0] if candidates_list else None
-        candidate: Final[JsonObject] = (
-            first_candidate if isinstance(first_candidate, Mapping) else MappingProxyType({})
-        )
+        candidate: Final[JsonObject] = first_candidate if isinstance(first_candidate, Mapping) else MappingProxyType({})
 
         content_val: Final[JsonValue | None] = candidate.get("content")
         content_obj: Final[JsonObject] = content_val if isinstance(content_val, Mapping) else MappingProxyType({})
@@ -329,9 +317,7 @@ class AntigravityConfig(BaseConfig):
         delta_text: Final[str] = "".join(text_parts)
         delta: Final[Delta] = Delta(content=delta_text) if delta_text else Delta()
 
-        return ModelResponseStream(
-            choices=[StreamingChoices(delta=delta, finish_reason=finish_reason, index=0)]
-        )
+        return ModelResponseStream(choices=[StreamingChoices(delta=delta, finish_reason=finish_reason, index=0)])
 
     def get_error_class(
         self,

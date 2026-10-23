@@ -260,101 +260,8 @@ jobs:
           else
             echo "GITGUARDIAN_API_KEY not set, skipping ggshield scan"
           fi
-  ui:
-    name: ui
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    defaults:
-      run:
-        working-directory: ui/litellm-dashboard
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Collect changed files
-        id: changed
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # base.sha is the base branch tip from when the PR was opened, while
-          # actions/checkout leaves HEAD on a merge of the PR into the *current*
-          # base tip. "$BASE_SHA"...HEAD therefore spans every base-branch commit
-          # landed since, so a PR that touches no UI file still gets linted
-          # against hundreds of other people's files. Diff the PR head against its
-          # own merge base instead, which is exactly what this PR changed.
-          merge_base=$(gh api "repos/${{ github.repository }}/compare/${BASE_SHA}...${HEAD_SHA}?per_page=1" --jq '.merge_base_commit.sha')
-          test -n "$merge_base"
-          git fetch --no-tags --depth=1 origin "$merge_base" "$HEAD_SHA"
-          : > "$RUNNER_TEMP/prettier_files.txt"
-          : > "$RUNNER_TEMP/eslint_files.txt"
-          while IFS= read -r f; do
-            [ -f "$f" ] || continue
-            case "$f" in
-              *.js | *.jsx | *.ts | *.tsx | *.mjs | *.cjs)
-                printf '%s\n' "$f" >> "$RUNNER_TEMP/prettier_files.txt"
-                printf '%s\n' "$f" >> "$RUNNER_TEMP/eslint_files.txt" ;;
-              *.json | *.css | *.scss | *.md | *.mdx | *.yml | *.yaml | *.html)
-                printf '%s\n' "$f" >> "$RUNNER_TEMP/prettier_files.txt" ;;
-            esac
-          done < <(git diff --name-only --diff-filter=ACMR --relative "$merge_base" "$HEAD_SHA" -- .)
-          if [ -s "$RUNNER_TEMP/prettier_files.txt" ] || [ -s "$RUNNER_TEMP/eslint_files.txt" ]; then
-            echo "has_files=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_files=false" >> "$GITHUB_OUTPUT"
-            echo "No lintable UI files changed in this PR; nothing to check."
-          fi
-
-      - name: Setup Node.js
-        if: steps.changed.outputs.has_files == 'true'
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version-file: ui/litellm-dashboard/.nvmrc
-          cache: "npm"
-          cache-dependency-path: ui/litellm-dashboard/package-lock.json
-
-      - name: Install dependencies
-        if: steps.changed.outputs.has_files == 'true'
-        run: npm ci
-
-      - name: Lint changed files (prettier + eslint)
-        if: steps.changed.outputs.has_files == 'true'
-        run: |
-          prettier_files=()
-          eslint_files=()
-          while IFS= read -r f; do prettier_files+=("$f"); done < "$RUNNER_TEMP/prettier_files.txt"
-          while IFS= read -r f; do eslint_files+=("$f"); done < "$RUNNER_TEMP/eslint_files.txt"
-          status=0
-          if [ ${#prettier_files[@]} -gt 0 ]; then
-            echo "::group::Prettier (${#prettier_files[@]} files)"
-            npx prettier --check "${prettier_files[@]}" || { status=1; echo "::error::Unformatted files. Fix with: npm run format"; }
-            echo "::endgroup::"
-          fi
-          if [ ${#eslint_files[@]} -gt 0 ]; then
-            echo "::group::ESLint (${#eslint_files[@]} files)"
-            npx eslint --no-warn-ignored --pass-on-unpruned-suppressions "${eslint_files[@]}" || status=1
-            echo "::endgroup::"
-          fi
-          exit $status
-
-      - name: Check lint budgets
-        if: ${{ !cancelled() && steps.changed.outputs.has_files == 'true' }}
-        run: |
-          npx eslint . -f json -o "$RUNNER_TEMP/lint-report.json" || true
-          node scripts/check-lint-budgets.mjs "$RUNNER_TEMP/lint-report.json" eslint-budgets.json
-
-      - name: Check for dead code (knip)
-        if: ${{ !cancelled() && steps.changed.outputs.has_files == 'true' }}
-        run: npm run knip:ci
-  ui-api-types:
-    name: ui-api-types
+  openapi-snapshot:
+    name: openapi-snapshot
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -376,7 +283,7 @@ jobs:
             exit 0
           fi
           files="$(git diff --name-only "$base" HEAD)"
-          if grep -Eq '^(litellm/(proxy|types)/|ui/litellm-dashboard/(src/lib/http/schema\.d\.ts|scripts/gen-api-types\.mjs|package(-lock)?\.json)$|\.github/workflows/test-linting\.yml$)' <<< "$files"; then
+          if grep -Eq '^(litellm/(proxy|types)/|\.github/workflows/test-linting\.yml$)' <<< "$files"; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "No proxy, types or generator changes in this pull request, nothing to verify."
@@ -435,44 +342,10 @@ jobs:
             echo "A lazily loaded route or model changed without regenerating the snapshot that /openapi.json serves for unloaded features."
             echo "To fix, run from the repo root:"
             echo "  uv run python -m litellm.proxy._lazy_openapi_snapshot"
-            echo "then run npm run gen:api from ui/litellm-dashboard and commit both files."
+            echo "then commit the updated snapshot."
             exit 1
           fi
           echo "_lazy_openapi_snapshot.json is in sync with the lazily loaded routes."
-
-      - name: Set up Node.js
-        if: steps.changes.outputs.relevant == 'true'
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version-file: ui/litellm-dashboard/.nvmrc
-          cache: "npm"
-          cache-dependency-path: ui/litellm-dashboard/package-lock.json
-
-      - name: Install dashboard dependencies
-        if: steps.changes.outputs.relevant == 'true'
-        working-directory: ui/litellm-dashboard
-        run: npm ci
-
-      - name: Regenerate types from the live spec
-        if: steps.changes.outputs.relevant == 'true'
-        working-directory: ui/litellm-dashboard
-        env:
-          LITELLM_PYTHON: "uv run --no-sync python"
-        run: npm run gen:api
-
-      - name: Fail if types are stale
-        if: steps.changes.outputs.relevant == 'true'
-        run: |
-          if ! git diff --exit-code -- ui/litellm-dashboard/src/lib/http/schema.d.ts; then
-            echo "::error file=ui/litellm-dashboard/src/lib/http/schema.d.ts::Generated API types are out of sync with the proxy OpenAPI spec."
-            echo ""
-            echo "A backend route or model changed without regenerating the dashboard types."
-            echo "To fix, run from ui/litellm-dashboard:"
-            echo "  npm run gen:api"
-            echo "then commit the updated src/lib/http/schema.d.ts."
-            exit 1
-          fi
-          echo "schema.d.ts is in sync with the proxy OpenAPI spec."
   code-quality:
     name: code-quality
     permissions:
@@ -692,7 +565,7 @@ jobs:
         run: uv tool run --from 'semgrep==1.157.0' semgrep scan --config .semgrep/rules . --error
   lint-passed:
     name: lint passed
-    needs: [python, secret-scan, ui, ui-api-types, code-quality, ci-coverage, semgrep]
+    needs: [python, secret-scan, openapi-snapshot, code-quality, ci-coverage, semgrep]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

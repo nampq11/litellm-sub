@@ -56,12 +56,7 @@ hosted_config.yaml
 litellm/proxy/tests/node_modules
 litellm/proxy/tests/package.json
 litellm/proxy/tests/package-lock.json
-ui/litellm-dashboard/.next
-ui/litellm-dashboard/node_modules
-ui/litellm-dashboard/next-env.d.ts
 *.tsbuildinfo
-ui/litellm-dashboard/package.json
-ui/litellm-dashboard/package-lock.json
 helm/litellm-helm/*.tgz
 helm/*.tgz
 litellm/proxy/vertex_key.json
@@ -147,7 +142,6 @@ crash.*.log
 # pytest coverage data
 .coverage
 
-ui/litellm-dashboard/out/
 litellm.log
 
 .coverage-rust

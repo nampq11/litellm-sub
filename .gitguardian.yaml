@@ -22,7 +22,6 @@ secret:
     
     # Build outputs and static assets
     - "litellm/proxy/_experimental/out/**"
-    - "ui/litellm-dashboard/public/**"
     - "**/swagger/*.js"
     - "**/*.woff"
     - "**/*.woff2"

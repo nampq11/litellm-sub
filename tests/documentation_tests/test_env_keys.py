@@ -42,6 +42,19 @@ EXCLUDED_INTERNAL_TUNING_VARS = {
     "DEFAULT_S3_MAX_ADAPTIVE_CONCURRENCY",
 }
 
+# Fork-private Antigravity provider vars. The upstream litellm-docs checkout
+# this check runs against can never mention them; they are documented in
+# litellm/llms/antigravity/README.md instead.
+EXCLUDED_FORK_PRIVATE_VARS = {
+    "ANTIGRAVITY_ACCESS_TOKEN",
+    "ANTIGRAVITY_ACCOUNTS_FILE",
+    "ANTIGRAVITY_EMAIL",
+    "ANTIGRAVITY_PROJECT_ID",
+    "ANTIGRAVITY_REFRESH_TOKEN",
+    "ANTIGRAVITY_TOKEN_DIR",
+    "ANTIGRAVITY_USER_AGENT",
+}
+
 EXCLUDED_TERMINAL_VARS = {
     "TERM",
     "TERM_PROGRAM",
@@ -60,7 +73,11 @@ EXCLUDED_TERMINAL_VARS = {
 }
 
 EXCLUDED_KEYS = frozenset(
-    EXCLUDED_TERMINAL_VARS | EXCLUDED_GUARD_ONLY_VARS | EXCLUDED_ROLLOUT_FLAGS | EXCLUDED_INTERNAL_TUNING_VARS
+    EXCLUDED_TERMINAL_VARS
+    | EXCLUDED_GUARD_ONLY_VARS
+    | EXCLUDED_ROLLOUT_FLAGS
+    | EXCLUDED_INTERNAL_TUNING_VARS
+    | EXCLUDED_FORK_PRIVATE_VARS
 )
 
 # Directories to skip (dependencies, venvs, caches) - only scan litellm source
