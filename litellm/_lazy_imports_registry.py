@@ -330,6 +330,7 @@ LLM_CONFIG_NAMES: Final = (
     "IBMWatsonXAudioTranscriptionConfig",
     "GithubCopilotConfig",
     "GithubCopilotResponsesAPIConfig",
+    "AntigravityConfig",
     "ChatGPTConfig",
     "ChatGPTResponsesAPIConfig",
     "ManusResponsesAPIConfig",
@@ -1256,6 +1257,7 @@ _LLM_CONFIGS_IMPORT_MAP: Final = {
         ".llms.github_copilot.embedding.transformation",
         "GithubCopilotEmbeddingConfig",
     ),
+    "AntigravityConfig": (".llms.antigravity.chat.transformation", "AntigravityConfig"),
     "ChatGPTConfig": (".llms.chatgpt.chat.transformation", "ChatGPTConfig"),
     "ChatGPTResponsesAPIConfig": (
         ".llms.chatgpt.responses.transformation",

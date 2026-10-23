@@ -877,6 +877,7 @@ LITELLM_CHAT_PROVIDERS: Final = [
 # metadata or capability lookup against them can block for minutes waiting on a human.
 PROVIDERS_THAT_AUTHENTICATE_ON_PROVIDER_INFO: Final = frozenset(
     {
+        "antigravity",
         "github_copilot",
         "chatgpt",
     }

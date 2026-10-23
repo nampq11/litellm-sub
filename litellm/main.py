@@ -1558,7 +1558,10 @@ def _complete_azure_text(ctx: CompletionDispatchContext) -> _CompletionDispatchR
     return response
 
 
-def _complete_deepseek(ctx: CompletionDispatchContext) -> _CompletionDispatchResult:
+def _complete_base_llm_dispatch(
+    ctx: CompletionDispatchContext,
+    fallback_config: BaseConfig | None = None,
+) -> _CompletionDispatchResult:
     acompletion: Final = ctx.acompletion
     api_base: Final = ctx.api_base
     api_key: Final = ctx.api_key
@@ -1571,10 +1574,15 @@ def _complete_deepseek(ctx: CompletionDispatchContext) -> _CompletionDispatchRes
     model: Final = ctx.model
     model_response: Final = ctx.model_response
     optional_params: Final = ctx.optional_params
-    provider_config: Final = ctx.provider_config
+    provider_config: Final = ctx.provider_config or fallback_config
     shared_session: Final = ctx.shared_session
     stream: Final = ctx.stream
-    timeout: Final = ctx.timeout
+    raw_timeout: Final = ctx.timeout
+    timeout: Final[float | httpx.Timeout] = (
+        raw_timeout
+        if isinstance(raw_timeout, (float, int, httpx.Timeout))
+        else 600.0
+    )
 
     try:
         response: Final = base_llm_http_handler.completion(
@@ -1597,16 +1605,19 @@ def _complete_deepseek(ctx: CompletionDispatchContext) -> _CompletionDispatchRes
             provider_config=provider_config,
         )
     except Exception as e:
-        ## LOGGING - log the original exception returned
         logging.post_call(
             input=messages,
             api_key=api_key,
             original_response=str(e),
-            additional_args={"headers": headers},
+            additional_args=MappingProxyType({"headers": headers}),
         )
-        raise e
+        raise
 
     return response
+
+
+def _complete_deepseek(ctx: CompletionDispatchContext) -> _CompletionDispatchResult:
+    return _complete_base_llm_dispatch(ctx)
 
 
 def _complete_azure_ai(ctx: CompletionDispatchContext) -> _CompletionDispatchResult:
@@ -1895,53 +1906,7 @@ def _complete_fireworks_ai(
 
 
 def _complete_together_ai(ctx: CompletionDispatchContext) -> _CompletionDispatchResult:
-    acompletion: Final = ctx.acompletion
-    api_base: Final = ctx.api_base
-    api_key: Final = ctx.api_key
-    client: Final = _dispatch_client_http(ctx)
-    custom_llm_provider: Final = ctx.custom_llm_provider
-    headers: Final = ctx.headers
-    litellm_params: Final = ctx.litellm_params
-    logging: Final = ctx.logging
-    messages: Final = ctx.messages
-    model: Final = ctx.model
-    model_response: Final = ctx.model_response
-    optional_params: Final = ctx.optional_params
-    provider_config: Final = ctx.provider_config
-    shared_session: Final = ctx.shared_session
-    stream: Final = ctx.stream
-    timeout: Final = ctx.timeout
-
-    try:
-        response: Final = base_llm_http_handler.completion(
-            model=model,
-            messages=messages,
-            headers=headers,
-            model_response=model_response,
-            api_key=api_key,
-            api_base=api_base,
-            acompletion=acompletion,
-            logging_obj=logging,
-            optional_params=optional_params,
-            litellm_params=litellm_params,
-            shared_session=shared_session,
-            timeout=timeout,
-            client=client,
-            custom_llm_provider=custom_llm_provider,
-            encoding=_get_encoding(),
-            stream=stream,
-            provider_config=provider_config,
-        )
-    except Exception as e:
-        logging.post_call(
-            input=messages,
-            api_key=api_key,
-            original_response=str(e),
-            additional_args=MappingProxyType({"headers": headers}),
-        )
-        raise
-
-    return response
+    return _complete_base_llm_dispatch(ctx)
 
 
 def _complete_heroku(ctx: CompletionDispatchContext) -> _CompletionDispatchResult:
@@ -3700,6 +3665,12 @@ def _complete_fal_ai(ctx: CompletionDispatchContext) -> _CompletionDispatchResul
     return response
 
 
+def _complete_antigravity(
+    ctx: CompletionDispatchContext,
+) -> _CompletionDispatchResult:
+    from litellm.llms.antigravity.chat.transformation import AntigravityConfig
+
+    return _complete_base_llm_dispatch(ctx, fallback_config=AntigravityConfig())
 def _complete_vertex_ai_beta(
     ctx: CompletionDispatchContext,
 ) -> _CompletionDispatchResult:
@@ -6278,6 +6249,9 @@ def completion(
             raise ValueError(
                 "Palm was decommisioned on October 2024. Please use the `gemini/` route for Gemini Google AI Studio Models. Announcement: https://ai.google.dev/palm_docs/palm?hl=en"
             )
+        elif custom_llm_provider == "antigravity":
+            response = _complete_antigravity(_dispatch_ctx)  # rebind-ok: mirrors sibling provider branches
+
         elif custom_llm_provider == "vertex_ai_beta" or custom_llm_provider == "gemini":
             response = _complete_vertex_ai_beta(_dispatch_ctx)
 
