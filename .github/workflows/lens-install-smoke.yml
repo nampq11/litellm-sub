@@ -35,8 +35,6 @@ jobs:
             dockerfile: gateway/Dockerfile
           - component: backend
             dockerfile: backend/Dockerfile
-          - component: ui
-            dockerfile: ui/Dockerfile
           - component: migrations
             dockerfile: migrations/Dockerfile
           - component: monolith
