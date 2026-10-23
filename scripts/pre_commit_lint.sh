@@ -17,12 +17,11 @@
 #     scripts/test_quality_gate.py
 #                      -> ruff over ruff-tests.toml + `make lint-test-quality` (test-linting.yml's
 #                         test-tree ruff and test-quality gate steps)
-#   - dashboard        -> prettier + eslint + lint budgets (test-linting.yml's ui job)
-#   - proxy/types      -> regenerate the lazy OpenAPI snapshot and dashboard API types, fail on drift (test-linting.yml's ui-api-types job)
+#   - proxy/types      -> regenerate the lazy OpenAPI snapshot, fail on drift (test-linting.yml's openapi-snapshot job)
 #
 # Each block is skipped when no matching files are in scope, so unrelated commits
 # stay fast. This is intentionally not auto-installed as a git hook (see
-# scripts/install_git_hooks.sh): the dashboard and basedpyright passes can take
+# scripts/install_git_hooks.sh): the basedpyright pass can take
 # minutes, so it's run on demand rather than firing on every human commit. It is
 # hook-compatible if you want that anyway:
 # `ln -s ../../scripts/pre_commit_lint.sh .git/hooks/pre-commit`.
@@ -98,9 +97,7 @@ existing_files() {
 litellm_py_pattern='^litellm/.*\.py$'
 e2e_py_pattern='^tests/e2e(_harness)?/.*\.py$'
 test_tree_pattern='^(tests/.*\.py|ruff-tests\.toml|scripts/(check_test_quality|test_quality_gate)\.py)$'
-spec_pattern='^(litellm/(proxy|types)/.*|ui/litellm-dashboard/(scripts/gen-api-types\.mjs|package\.json|package-lock\.json|src/lib/http/schema\.d\.ts))$'
-ui_prettier_pattern='^ui/litellm-dashboard/.*\.(js|jsx|ts|tsx|mjs|cjs|json|css|scss|md|mdx|yml|yaml|html)$'
-ui_eslint_pattern='^ui/litellm-dashboard/.*\.(js|jsx|ts|tsx|mjs|cjs)$'
+spec_pattern='^litellm/(proxy|types)/.*$'
 
 litellm_py_files=$(scope_match "$litellm_py_pattern")
 if [ -n "$(scope_match '^(litellm/proxy/_experimental/mcp_server/|scripts/check_mcp_operation_boundary\.py)')" ]; then
@@ -110,16 +107,10 @@ e2e_py_files=$(scope_match "$e2e_py_pattern")
 test_tree_files=$(scope_match "$test_tree_pattern")
 # ruff format (and CI's format step) skip enterprise; the rest of make lint covers it.
 fmt_files=$(printf '%s\n' "$litellm_py_files" | grep -v '^litellm/enterprise/' | existing_files)
-# test-linting.yml triggers on any file under litellm/proxy or litellm/types
-# (Prisma schema and configs included, not just Python) plus the generator and its
-# lockfiles, so match that whole trigger set rather than a Python subset.
+# test-linting.yml's openapi-snapshot job triggers on any file under litellm/proxy
+# or litellm/types (Prisma schema and configs included, not just Python), so match
+# that whole trigger set rather than a Python subset.
 spec_files=$(scope_match "$spec_pattern")
-# CI's ui job runs prettier over a wider extension set than eslint; keep that
-# split so this flags exactly what the job would.
-ui_prettier_changed=$(scope_match "$ui_prettier_pattern")
-ui_eslint_changed=$(scope_match "$ui_eslint_pattern")
-ui_prettier_files=$(printf '%s\n' "$ui_prettier_changed" | existing_files)
-ui_eslint_files=$(printf '%s\n' "$ui_eslint_changed" | existing_files)
 
 # CI lints the committed tree, so with staged files this script predicts CI for
 # what you have STAGED (every trigger above reads `git diff --cached`). The tools
@@ -148,43 +139,8 @@ if [ -n "$staged" ]; then
     warn_skipped "Python lint (make lint)" "$litellm_py_pattern" "$litellm_py_files"
     warn_skipped "tests/e2e checks (basedpyright + raw HTTP client ban)" "$e2e_py_pattern" "$e2e_py_files"
     warn_skipped "test-tree lint (ruff-tests.toml + test-quality gate)" "$test_tree_pattern" "$test_tree_files"
-    warn_skipped "dashboard lint (prettier + eslint + lint budgets)" "$ui_prettier_pattern" "$ui_prettier_changed"
-    warn_skipped "dashboard API-type sync (npm run gen:api)" "$spec_pattern" "$spec_files"
+    warn_skipped "lazy OpenAPI snapshot sync" "$spec_pattern" "$spec_files"
 fi
-
-lint_dashboard() {
-    (
-        trap 'exit 143' TERM
-        trap 'rm -f "${report:-}"' EXIT
-        rc=0
-        prettier_rel=()
-        eslint_rel=()
-        while IFS= read -r f; do
-            [ -n "$f" ] && prettier_rel+=("${f#ui/litellm-dashboard/}")
-        done <<EOF
-$ui_prettier_files
-EOF
-        while IFS= read -r f; do
-            [ -n "$f" ] && eslint_rel+=("${f#ui/litellm-dashboard/}")
-        done <<EOF
-$ui_eslint_files
-EOF
-        cd ui/litellm-dashboard
-        if [ ${#prettier_rel[@]} -gt 0 ]; then
-            npx prettier --check "${prettier_rel[@]}" || rc=1
-        fi
-        if [ ${#eslint_rel[@]} -gt 0 ]; then
-            npx eslint --no-warn-ignored --pass-on-unpruned-suppressions "${eslint_rel[@]}" || rc=1
-        fi
-        # Whole-folder lint budgets, exactly as the ui job runs them: the
-        # counts are not diff-scoped, so a local pass here means the budget step will
-        # pass in CI too.
-        report=$(mktemp)
-        npx eslint . -f json -o "$report" || true
-        node scripts/check-lint-budgets.mjs "$report" eslint-budgets.json || rc=1
-        exit $rc
-    )
-}
 
 status=0
 
@@ -210,8 +166,8 @@ python_checks() {
 
 on_interrupt() {
     trap - INT TERM
-    rm -f "${python_log:-}" "${dash_log:-}" "${gen_log:-}"
-    for job_pid in ${python_pid:-} ${dash_pid:-} ${gen_pid:-}; do
+    rm -f "${python_log:-}" "${gen_log:-}"
+    for job_pid in ${python_pid:-} ${gen_pid:-}; do
         kill -- "-$job_pid" 2>/dev/null || true
     done
     exit 130
@@ -237,37 +193,15 @@ if [ -n "$e2e_py_files" ]; then
         || { echo "✗ Raw HTTP client import in tests/e2e. Route the call through tests/e2e/e2e_http.py, then re-run make check." >&2; status=1; }
 fi
 
-dashboard_checks() {
-    echo "check: linting dashboard (prettier + eslint + lint budgets)"
-    if [ ! -d ui/litellm-dashboard/node_modules ]; then
-        echo "✗ ui/litellm-dashboard/node_modules is missing; dashboard lint cannot run." >&2
-        bootstrap_hint
-        return 1
-    fi
-    lint_dashboard || { echo "✗ Dashboard lint failed. See above; format with: (cd ui/litellm-dashboard && npm run format)." >&2; return 1; }
-}
-
-if [ -n "$ui_prettier_changed" ] || [ -n "$ui_eslint_changed" ]; then
-    dash_log=$(mktemp)
-    set -m
-    dashboard_checks > "$dash_log" 2>&1 &
-    dash_pid=$!
-    set +m
-fi
-
-genapi_checks() {
+snapshot_checks() {
     local status=0
-    echo "check: checking the lazy OpenAPI snapshot and dashboard API types are in sync (npm run gen:api)"
-    # gen-api-types.mjs imports litellm.proxy.proxy_server, which needs the proxy deps
-    # and an up-to-date Prisma client; test-linting.yml installs those and runs
-    # prisma generate before gen:api, so mirror that here or a stale client can mask
-    # drift that CI will still flag.
-    if [ ! -d ui/litellm-dashboard/node_modules ]; then
-        echo "✗ ui/litellm-dashboard/node_modules is missing; the gen:api sync check cannot run." >&2
-        bootstrap_hint
-        status=1
-    elif ! uv run --no-sync python -c "import orjson, prisma" 2>/dev/null; then
-        echo "✗ The Python env lacks the proxy deps (orjson/prisma) that gen:api needs." >&2
+    echo "check: checking the lazy OpenAPI snapshot is in sync"
+    # Regenerating the snapshot imports litellm.proxy.proxy_server, which needs the
+    # proxy deps and an up-to-date Prisma client; test-linting.yml installs those and
+    # runs prisma generate before regenerating, so mirror that here or a stale client
+    # can mask drift that CI will still flag.
+    if ! uv run --no-sync python -c "import orjson, prisma" 2>/dev/null; then
+        echo "✗ The Python env lacks the proxy deps (orjson/prisma) that the snapshot check needs." >&2
         bootstrap_hint
         status=1
     elif ! uv run --no-sync python scripts/prisma_generate_if_needed.py; then
@@ -276,17 +210,8 @@ genapi_checks() {
     elif ! uv run --no-sync python -m litellm.proxy._lazy_openapi_snapshot; then
         echo "✗ Could not regenerate the lazy OpenAPI snapshot (python -m litellm.proxy._lazy_openapi_snapshot failed)." >&2
         status=1
-    elif ( cd ui/litellm-dashboard && LITELLM_PYTHON="uv run --no-sync python" npm run gen:api ); then
-        if ! git diff --quiet -- litellm/proxy/_lazy_openapi_snapshot.json; then
-            echo "✗ The lazy OpenAPI snapshot is stale; regenerated litellm/proxy/_lazy_openapi_snapshot.json. Stage it and commit; re-run make check only if other checks failed too." >&2
-            status=1
-        fi
-        if ! git diff --quiet -- ui/litellm-dashboard/src/lib/http/schema.d.ts; then
-            echo "✗ Dashboard API types are stale; regenerated src/lib/http/schema.d.ts. Stage it and commit; re-run make check only if other checks failed too." >&2
-            status=1
-        fi
-    else
-        echo "✗ Could not regenerate API types (npm run gen:api failed)." >&2
+    elif ! git diff --quiet -- litellm/proxy/_lazy_openapi_snapshot.json; then
+        echo "✗ The lazy OpenAPI snapshot is stale; regenerated litellm/proxy/_lazy_openapi_snapshot.json. Stage it and commit; re-run make check only if other checks failed too." >&2
         status=1
     fi
     return $status
@@ -295,7 +220,7 @@ genapi_checks() {
 if [ -n "$spec_files" ]; then
     gen_log=$(mktemp)
     set -m
-    genapi_checks > "$gen_log" 2>&1 &
+    snapshot_checks > "$gen_log" 2>&1 &
     gen_pid=$!
     set +m
 fi
@@ -312,10 +237,6 @@ fi
 if [ -n "${python_pid:-}" ]; then
     wait "$python_pid" || status=1
     cat "$python_log"; rm -f "$python_log"
-fi
-if [ -n "${dash_pid:-}" ]; then
-    wait "$dash_pid" || status=1
-    cat "$dash_log"; rm -f "$dash_log"
 fi
 if [ -n "${gen_pid:-}" ]; then
     wait "$gen_pid" || status=1
@@ -336,10 +257,9 @@ summary_item "Python lint (make lint)" "$litellm_py_files" "no litellm/ Python f
 summary_item "tests/e2e checks (basedpyright + raw HTTP client ban)" "$e2e_py_files" "no tests/e2e Python files in scope"
 summary_item "test-tree lint (ruff-tests.toml + test-quality gate)" "$test_tree_files" \
     "no tests/ Python files or test-tree lint inputs in scope"
-summary_item "dashboard lint (prettier + eslint + lint budgets)" "$ui_prettier_changed$ui_eslint_changed" "no dashboard files in scope"
-summary_item "dashboard API-type sync (npm run gen:api)" "$spec_files" "no litellm/proxy, litellm/types, or generator files in scope"
+summary_item "lazy OpenAPI snapshot sync" "$spec_files" "no litellm/proxy or litellm/types files in scope"
 
-if [ -z "$litellm_py_files$e2e_py_files$test_tree_files$ui_prettier_changed$ui_eslint_changed$spec_files" ]; then
+if [ -z "$litellm_py_files$e2e_py_files$test_tree_files$spec_files" ]; then
     echo "check: NOTE - no gating lint check matches the files in scope, so nothing ran:" >&2
     printf '%s\n' "$scope" | sed 's/^/    /' >&2
     echo "  A pass here is a no-op, not a lint verdict." >&2
