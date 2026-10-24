@@ -170,8 +170,22 @@ def compat_headers(provider: str, headers: Mapping[str, str | bytes]) -> Mapping
     return order_headers(with_agent, fingerprint.header_order)
 
 
-def compat_body(provider: str, data: Mapping[str, object]) -> str:
+def ordered_body(provider: str, data: Mapping[str, object]) -> Mapping[str, object]:
     fingerprint: Final[CliFingerprint | None] = fingerprint_for(provider)
     if fingerprint is None:
-        return json.dumps(data)
-    return json.dumps(order_fields(data, fingerprint.body_field_order))
+        return data
+    return order_fields(data, fingerprint.body_field_order)
+
+
+def compat_body(provider: str, data: Mapping[str, object]) -> str:
+    return json.dumps(ordered_body(provider, data))
+
+
+def compat_wire(
+    provider: str, headers: object, data: object
+) -> tuple[dict[str, str | bytes], dict[str, object]]:  # mutable-ok: legacy anthropic handler mutates the body dict
+    """Validate untyped request headers/body and pin the CLI wire image in one step."""
+    return (
+        dict(compat_headers(provider, HEADERS_ADAPTER.validate_python(headers))),
+        dict(ordered_body(provider, BODY_ADAPTER.validate_python(data))),
+    )

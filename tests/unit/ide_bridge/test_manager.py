@@ -3,11 +3,13 @@ from pathlib import Path
 
 from litellm.ide_bridge.config import BridgeConfig
 from litellm.ide_bridge.manager import (
+    apply_system_changes,
     bridge_status,
     os_release_pretty_name,
     pid_alive,
     read_pidfile,
     stop_bridge,
+    teardown_system_changes,
     write_pidfile,
 )
 
@@ -123,3 +125,22 @@ class TestBridgeStatus:
 
     def test_no_pidfile_reports_stopped(self, tmp_path: Path):
         assert bridge_status(_config(data_dir=tmp_path), send_signal=_dead_sender) == "stopped"
+
+
+class TestApplySystemChanges:
+    def test_no_trust_install_skips_hosts_and_trust_store(self, tmp_path: Path):
+        hosts_file = tmp_path / "hosts"
+        hosts_file.write_text(PRE_EXISTING_HOSTS)
+
+        result = apply_system_changes(_config(data_dir=tmp_path, install_trust=False), hosts_file=hosts_file)
+
+        assert result is None
+        assert hosts_file.read_text() == PRE_EXISTING_HOSTS
+
+    def test_teardown_with_no_trust_install_leaves_hosts_untouched(self, tmp_path: Path):
+        hosts_file = tmp_path / "hosts"
+        hosts_file.write_text(PRE_EXISTING_HOSTS)
+
+        teardown_system_changes(_config(data_dir=tmp_path, install_trust=False), hosts_file=hosts_file)
+
+        assert hosts_file.read_text() == PRE_EXISTING_HOSTS

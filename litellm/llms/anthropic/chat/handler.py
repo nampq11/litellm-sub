@@ -21,6 +21,7 @@ from litellm.anthropic_beta_headers_manager import (
     update_request_with_filtered_beta,
 )
 from litellm.constants import RESPONSE_FORMAT_TOOL_NAME
+from litellm.litellm_core_utils.cli_compat import compat_wire
 from litellm.litellm_core_utils.core_helpers import map_finish_reason
 from litellm.litellm_core_utils.json_fragment_accumulator import JSONFragmentAccumulator
 from litellm.llms.base_llm.base_utils import (
@@ -499,7 +500,9 @@ class AnthropicChatCompletion(BaseLLM):
 
         transform_params: Final = {**optional_params, "is_vertex_request": is_vertex_request}
 
-        def finish_request(request_data: dict) -> tuple[dict, dict]:  # mutable-ok: rewritten in place downstream
+        def finish_request(
+            request_data: dict[str, object],
+        ) -> tuple[dict[str, object], dict[str, object]]:  # mutable-ok: rewritten in place downstream
             """Filter beta headers and emit pre_call, returning `(headers, data)`.
 
             The pair stays mutable because the streaming path rewrites it in
@@ -524,24 +527,27 @@ class AnthropicChatCompletion(BaseLLM):
 
         async def acompletion_dispatch() -> "ModelResponse | CustomStreamWrapper":
             """Translate then send, so the provider config can inline remote media off the event loop."""
-            request_headers, data = finish_request(
+            transformed_request: Final[dict[str, object]] = cast(
+                "dict[str, object]",
                 await config.async_transform_request(
                     model=model,
                     messages=messages,
                     optional_params=transform_params,
                     litellm_params=litellm_params,
                     headers=headers,
-                )
-            )
+                ),
+            )  # cast-ok: transform_request returns an untyped body dict
+            request_headers, data = finish_request(transformed_request)
+            wire_headers, wire_data = compat_wire(config.custom_llm_provider or "anthropic", request_headers, data)
             if (
                 stream is True
             ):  # if function call - fake the streaming (need complete blocks for output parsing in openai format)
                 print_verbose("makes async anthropic streaming POST request")
-                data["stream"] = stream
+                wire_data["stream"] = stream
                 return await self.acompletion_stream_function(
                     model=model,
                     messages=messages,
-                    data=data,
+                    data=wire_data,
                     api_base=api_base,
                     custom_prompt_dict=custom_prompt_dict,
                     model_response=model_response,
@@ -555,14 +561,14 @@ class AnthropicChatCompletion(BaseLLM):
                     json_mode=json_mode,
                     litellm_params=litellm_params,
                     logger_fn=logger_fn,
-                    headers=request_headers,
+                    headers=wire_headers,
                     timeout=timeout,
                     client=(client if client is not None and isinstance(client, AsyncHTTPHandler) else None),
                 )
             return await self.acompletion_function(
                 model=model,
                 messages=messages,
-                data=data,
+                data=wire_data,
                 api_base=api_base,
                 custom_prompt_dict=custom_prompt_dict,
                 model_response=model_response,
@@ -576,7 +582,7 @@ class AnthropicChatCompletion(BaseLLM):
                 _is_function_call=_is_function_call,
                 litellm_params=litellm_params,
                 logger_fn=logger_fn,
-                headers=request_headers,
+                headers=wire_headers,
                 client=client,
                 json_mode=json_mode,
                 timeout=timeout,
@@ -585,25 +591,28 @@ class AnthropicChatCompletion(BaseLLM):
         if acompletion is True:
             return acompletion_dispatch()
         else:
-            headers, data = finish_request(
+            transformed_request: Final[dict[str, object]] = cast(
+                "dict[str, object]",
                 config.transform_request(
                     model=model,
                     messages=messages,
                     optional_params=transform_params,
                     litellm_params=litellm_params,
                     headers=headers,
-                )
-            )
+                ),
+            )  # cast-ok: transform_request returns an untyped body dict
+            request_headers, data = finish_request(transformed_request)
+            wire_headers, wire_data = compat_wire(config.custom_llm_provider or "anthropic", request_headers, data)
             ## COMPLETION CALL
             if (
                 stream is True
             ):  # if function call - fake the streaming (need complete blocks for output parsing in openai format)
-                data["stream"] = stream
+                wire_data["stream"] = stream
                 completion_stream, headers = make_sync_call(
                     client=client,
                     api_base=api_base,
-                    headers=headers,
-                    data=json.dumps(data),
+                    headers=wire_headers,
+                    data=json.dumps(wire_data),
                     model=model,
                     messages=messages,
                     logging_obj=logging_obj,
@@ -636,8 +645,8 @@ class AnthropicChatCompletion(BaseLLM):
                 try:
                     response: Final = client.post(
                         api_base,
-                        headers=headers,
-                        data=json.dumps(data),
+                        headers=wire_headers,
+                        data=json.dumps(wire_data),
                         timeout=timeout,
                         logging_obj=logging_obj,
                     )

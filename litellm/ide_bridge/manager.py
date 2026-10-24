@@ -99,22 +99,23 @@ def build_server(config: BridgeConfig) -> BridgeServer:
     )
 
 
-def apply_system_changes(config: BridgeConfig) -> None | str:
+def apply_system_changes(config: BridgeConfig, hosts_file: Path = HOSTS_PATH) -> None | str:
     """Trust the CA, then redirect the spoofed hosts. None means success."""
-    if config.install_trust:
-        commands: Final = install_commands(current_platform(), os_release_pretty_name(), str(config.ca_cert_path))
-        if isinstance(commands, TrustStoreError):
-            return str(commands)
-        install_error: Final = run_commands(commands)
-        if install_error is not None:
-            return f"could not install CA into OS trust store: {install_error}"
-    apply_hosts_block(HOSTS_PATH, MARKER_TAG, config.listen_host, config.spoof_hosts)
+    if not config.install_trust:
+        return None
+    commands: Final = install_commands(current_platform(), os_release_pretty_name(), str(config.ca_cert_path))
+    if isinstance(commands, TrustStoreError):
+        return str(commands)
+    install_error: Final = run_commands(commands)
+    if install_error is not None:
+        return f"could not install CA into OS trust store: {install_error}"
+    apply_hosts_block(hosts_file, MARKER_TAG, config.listen_host, config.spoof_hosts)
     return None
 
 
 def teardown_system_changes(config: BridgeConfig, hosts_file: Path = HOSTS_PATH) -> None:
-    remove_hosts_block(hosts_file, MARKER_TAG)
     if config.install_trust:
+        remove_hosts_block(hosts_file, MARKER_TAG)
         commands: Final = uninstall_commands(current_platform(), os_release_pretty_name())
         if not isinstance(commands, TrustStoreError):
             with contextlib.suppress(TrustStoreError):
