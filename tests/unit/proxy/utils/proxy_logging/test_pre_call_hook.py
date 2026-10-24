@@ -442,6 +442,7 @@ def test_every_pre_call_customlogger_is_deliberately_classified():
     judges_content = {
         "_OPTIONAL_PromptInjectionDetection",
         "_PROXY_AzureContentSafety",
+        "PROXY_RTKTokenSaver",
         "ENTERPRISE_BannedKeywords",
         "ENTERPRISE_BlockedUserList",
     }

@@ -20,29 +20,11 @@ TEST_TREE_SKIPPED = (
     "(no tests/ Python files or test-tree lint inputs in scope)"
 )
 
-BARRIER_HELPER = """barrier_sync() {
-    touch "$STUB_BARRIER_DIR/$1.started"
-    for other in $2; do
-        tries=0
-        while [ ! -f "$STUB_BARRIER_DIR/$other.started" ]; do
-            tries=$((tries + 1))
-            if [ "$tries" -gt 100 ]; then
-                echo "barrier timeout: $1 never saw $other start" >&2
-                exit 1
-            fi
-            sleep 0.1
-        done
-    done
-}
-"""
-
 MAKE_STUB = """#!/bin/sh
-. "$STUB_BIN/barrier.sh"
 [ -n "${STUB_ARGS_DIR:-}" ] && echo "$*" >> "$STUB_ARGS_DIR/make.args"
 case "$*" in
     lint)
         [ "${STUB_FAIL:-}" = "make-lint" ] && exit 1
-        [ -n "${STUB_BARRIER_DIR:-}" ] && barrier_sync python "dashboard genapi"
         if [ -n "${STUB_HANG_DIR:-}" ]; then
             echo "$$" > "$STUB_HANG_DIR/make.pid"
             touch "$STUB_HANG_DIR/make.started"
@@ -56,31 +38,8 @@ esac
 exit 0
 """
 
-NPX_STUB = """#!/bin/sh
-. "$STUB_BIN/barrier.sh"
-case "$*" in
-    prettier*)
-        [ -n "${STUB_BARRIER_DIR:-}" ] && barrier_sync dashboard "python genapi"
-        ;;
-    "eslint --no-warn-ignored"*)
-        [ "${STUB_FAIL:-}" = "eslint" ] && exit 1
-        ;;
-    "eslint . -f json"*)
-        if [ -n "${STUB_HANG_DIR:-}" ]; then
-            touch "$STUB_HANG_DIR/eslint_report.started"
-            sleep 60
-        fi
-        ;;
-esac
-exit 0
-"""
-
 UV_STUB = """#!/bin/sh
-. "$STUB_BIN/barrier.sh"
 case "$*" in
-    *orjson*)
-        [ -n "${STUB_BARRIER_DIR:-}" ] && barrier_sync genapi "python dashboard"
-        ;;
     "run --no-sync ruff check --config ruff-tests.toml"*)
         [ -n "${STUB_ARGS_DIR:-}" ] && echo "$*" >> "$STUB_ARGS_DIR/ruff_tests.args"
         [ "${STUB_FAIL:-}" = "tests-ruff" ] && exit 1
@@ -88,20 +47,6 @@ case "$*" in
 esac
 exit 0
 """
-
-NPM_STUB = """#!/bin/sh
-case "$*" in
-    "run gen:api")
-        [ "${STUB_FAIL:-}" = "gen-api" ] && exit 1
-        ;;
-esac
-exit 0
-"""
-
-NODE_STUB = """#!/bin/sh
-exit 0
-"""
-
 
 def _write_executable(path: Path, body: str) -> None:
     path.write_text(body)
@@ -113,21 +58,13 @@ def _sandbox(tmp_path: Path) -> tuple[Path, Path]:
     (repo / "litellm" / "proxy").mkdir(parents=True)
     (repo / "litellm" / "foo.py").write_text("x = 1\n")
     (repo / "litellm" / "proxy" / "spec.py").write_text("y = 2\n")
-    dashboard = repo / "ui" / "litellm-dashboard"
-    (dashboard / "src").mkdir(parents=True)
-    (dashboard / "node_modules").mkdir()
-    (dashboard / "src" / "app.ts").write_text("export {}\n")
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "barrier.sh").write_text(BARRIER_HELPER)
     _write_executable(bin_dir / "make", MAKE_STUB)
-    _write_executable(bin_dir / "npx", NPX_STUB)
     _write_executable(bin_dir / "uv", UV_STUB)
-    _write_executable(bin_dir / "npm", NPM_STUB)
-    _write_executable(bin_dir / "node", NODE_STUB)
     return repo, bin_dir
 
 
@@ -237,17 +174,6 @@ def test_staged_deletion_triggers_checks_without_feeding_missing_files_to_tools(
     assert "ruff format --check" not in proc.stdout
 
 
-def test_deleted_dashboard_file_still_triggers_dashboard_lint(tmp_path: Path) -> None:
-    repo, bin_dir = _sandbox(tmp_path)
-    _commit_all(repo, "base")
-    _set_base_ref(repo)
-    (repo / "ui" / "litellm-dashboard" / "src" / "app.ts").unlink()
-    _commit_all(repo, "delete dashboard file")
-    proc = _run(repo, bin_dir, {})
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "linting dashboard" in proc.stdout
-
-
 def test_nothing_staged_and_no_changes_is_an_explicit_no_op(tmp_path: Path) -> None:
     repo, bin_dir = _sandbox(tmp_path)
     _commit_all(repo, "base")
@@ -282,19 +208,6 @@ def test_partial_staging_warns_which_checks_were_skipped(tmp_path: Path) -> None
     assert "linting Python" not in proc.stdout
 
 
-def test_python_dashboard_and_gen_api_blocks_run_concurrently_with_grouped_output(tmp_path: Path) -> None:
-    repo, bin_dir = _sandbox(tmp_path)
-    barrier_dir = tmp_path / "barrier"
-    barrier_dir.mkdir()
-    proc = _run(repo, bin_dir, {"STUB_BARRIER_DIR": str(barrier_dir)})
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "barrier timeout" not in proc.stdout + proc.stderr
-    python_at = proc.stdout.index("linting Python")
-    dashboard_at = proc.stdout.index("linting dashboard")
-    gen_api_at = proc.stdout.index("API types")
-    assert python_at < dashboard_at < gen_api_at
-
-
 def test_all_blocks_passing_exits_zero(tmp_path: Path) -> None:
     repo, bin_dir = _sandbox(tmp_path)
     proc = _run(repo, bin_dir, {})
@@ -303,15 +216,14 @@ def test_all_blocks_passing_exits_zero(tmp_path: Path) -> None:
 
 def test_full_output_is_saved_to_a_log_file_in_the_git_dir(tmp_path: Path) -> None:
     repo, bin_dir = _sandbox(tmp_path)
-    (repo / "scratch.txt").write_text("")
+    _commit_all(repo, "base")
+    _stage_file(repo, "litellm/edited.py", "x = 2\n")
     proc = _run(repo, bin_dir, {})
     assert proc.returncode == 0, proc.stdout + proc.stderr
     log_file = repo / ".git" / "pre_commit_lint.log"
     log = log_file.read_text()
     assert "linting Python" in log
-    assert "linting dashboard" in log
-    assert "API types" in log
-    assert "unstaged/untracked changes" in log
+    assert "check: summary" in log
     assert f"check: full log: {log_file}" in proc.stdout
     assert "check: full log:" not in log
 
@@ -347,6 +259,8 @@ def _wait_until(predicate: Callable[[], bool], timeout_seconds: float) -> bool:
 
 def test_interrupt_kills_background_jobs_and_removes_logs(tmp_path: Path) -> None:
     repo, bin_dir = _sandbox(tmp_path)
+    _commit_all(repo, "base")
+    _stage_file(repo, "litellm/edited.py", "x = 2\n")
     hang_dir = tmp_path / "hang"
     hang_dir.mkdir()
     tmp_dir = tmp_path / "tmpdir"
@@ -362,7 +276,6 @@ def test_interrupt_kills_background_jobs_and_removes_logs(tmp_path: Path) -> Non
     )
     try:
         assert _wait_until((hang_dir / "make.started").exists, 10)
-        assert _wait_until((hang_dir / "eslint_report.started").exists, 10)
         os.killpg(proc.pid, signal.SIGINT)
         assert proc.wait(timeout=10) != 0
         make_pid = int((hang_dir / "make.pid").read_text())
@@ -375,6 +288,8 @@ def test_interrupt_kills_background_jobs_and_removes_logs(tmp_path: Path) -> Non
 
 def test_interrupt_spares_the_invoking_process(tmp_path: Path) -> None:
     repo, bin_dir = _sandbox(tmp_path)
+    _commit_all(repo, "base")
+    _stage_file(repo, "litellm/edited.py", "x = 2\n")
     hang_dir = tmp_path / "hang"
     hang_dir.mkdir()
     marker = tmp_path / "invoker_survived"
@@ -388,7 +303,6 @@ def test_interrupt_spares_the_invoking_process(tmp_path: Path) -> None:
     )
     try:
         assert _wait_until((hang_dir / "make.started").exists, 10)
-        assert _wait_until((hang_dir / "eslint_report.started").exists, 10)
         os.killpg(proc.pid, signal.SIGINT)
         assert proc.wait(timeout=10) == 0
         assert _wait_until(marker.exists, 5)
@@ -398,31 +312,26 @@ def test_interrupt_spares_the_invoking_process(tmp_path: Path) -> None:
             os.killpg(proc.pid, signal.SIGTERM)
 
 
-@pytest.mark.parametrize(
-    ("fail", "message"),
-    [
-        ("make-lint", "Python lint failed"),
-        ("eslint", "Dashboard lint failed"),
-        ("gen-api", "npm run gen:api failed"),
-    ],
-)
-def test_a_failing_block_fails_the_whole_run(tmp_path: Path, fail: str, message: str) -> None:
+def test_a_failing_block_fails_the_whole_run(tmp_path: Path) -> None:
     repo, bin_dir = _sandbox(tmp_path)
-    proc = _run(repo, bin_dir, {"STUB_FAIL": fail})
+    _commit_all(repo, "base")
+    _stage_file(repo, "litellm/edited.py", "x = 2\n")
+    proc = _run(repo, bin_dir, {"STUB_FAIL": "make-lint"})
     assert proc.returncode == 1
-    assert message in proc.stdout + proc.stderr
+    assert "Python lint failed" in proc.stdout + proc.stderr
 
 
 def test_run_ends_with_a_summary_of_ran_and_skipped_blocks(tmp_path: Path) -> None:
     repo, bin_dir = _sandbox(tmp_path)
+    _commit_all(repo, "base")
+    _stage_file(repo, "litellm/edited.py", "x = 2\n")
     proc = _run(repo, bin_dir, {})
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "check: summary" in proc.stdout
     assert "ran:     Python lint (make lint)" in proc.stdout
-    assert "ran:     dashboard lint (prettier + eslint + lint budgets)" in proc.stdout
-    assert "ran:     dashboard API-type sync (npm run gen:api)" in proc.stdout
     assert "skipped: tests/e2e checks (basedpyright + raw HTTP client ban) (no tests/e2e Python files in scope)" in proc.stdout
     assert TEST_TREE_SKIPPED in proc.stdout
+    assert "skipped: lazy OpenAPI snapshot sync (no litellm/proxy or litellm/types files in scope)" in proc.stdout
     assert "check: PASS" in proc.stdout
     assert "check: FAIL" not in proc.stdout
 

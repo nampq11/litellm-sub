@@ -8,6 +8,8 @@ from litellm.proxy._types import UserAPIKeyAuth
 
 
 class PROXY_RTKTokenSaver(CustomLogger):
+    enforces_request_content: bool = True
+
     def __init__(self) -> None:
         pass
 
