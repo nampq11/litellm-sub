@@ -14,6 +14,10 @@ from openai.types.chat import ChatCompletionChunk
 import litellm
 from litellm._uuid import uuid
 from litellm.constants import RESPONSE_FORMAT_TOOL_NAME
+from litellm.litellm_core_utils.cli_compat.fingerprints import (
+    ANTHROPIC_BODY_FIELD_ORDER,
+    ANTHROPIC_HEADER_ORDER,
+)
 from litellm.litellm_core_utils.prompt_templates.factory import anthropic_messages_pt
 from litellm.llms.anthropic.chat.handler import ModelResponseIterator, _envelope_verdict, make_call
 from litellm.llms.base_llm.base_utils import response_format_schema, unwrap_response_format_envelope
@@ -494,7 +498,11 @@ def test_streamed_thinking_blocks_accumulate_in_the_openai_sdk_and_replay_withou
         {"type": "content_block_delta", "index": 2, "delta": {"type": "thinking_delta", "thinking": "Step 3."}},
         {"type": "content_block_delta", "index": 2, "delta": {"type": "signature_delta", "signature": "sig-b"}},
         {"type": "content_block_stop", "index": 2},
-        {"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": None}, "usage": {"output_tokens": 9}},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {"output_tokens": 9},
+        },
         {"type": "message_stop"},
     )
 
@@ -515,7 +523,11 @@ def test_streamed_thinking_blocks_accumulate_in_the_openai_sdk_and_replay_withou
         "thinking_blocks": message["thinking_blocks"],
     }
     replayed: Final = anthropic_messages_pt(
-        messages=[{"role": "user", "content": "Capital of France?"}, next_turn, {"role": "user", "content": "And Spain?"}],
+        messages=[
+            {"role": "user", "content": "Capital of France?"},
+            next_turn,
+            {"role": "user", "content": "And Spain?"},
+        ],
         model="claude-haiku-4-5",
         llm_provider="anthropic",
     )
@@ -3607,3 +3619,101 @@ def test_streamed_end_turn_carries_no_stop_details():
     provider_fields: Final = assembled.choices[0].message.provider_specific_fields or {}
     assert "stop_details" not in provider_fields
     assert "stop_reason" not in provider_fields
+
+
+def _anthropic_completion_body() -> dict:
+    return {
+        "id": "msg_test",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-sonnet-4-6",
+        "content": [{"type": "text", "text": "ok"}],
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 1, "output_tokens": 1},
+    }
+
+
+@pytest.mark.asyncio
+async def test_acompletion_pins_cli_fingerprint_when_compat_enabled(monkeypatch: pytest.MonkeyPatch):
+    """The anthropic handler's own post path (not just the generic handler) must pin the CLI wire image."""
+    monkeypatch.setenv("LITELLM_CLI_COMPAT_PROVIDERS", "anthropic")
+    captured: dict = {}
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        captured["header_order"] = list(request.headers.keys())
+        captured["user_agent"] = request.headers.get("user-agent")
+        captured["body_keys"] = list(json.loads(request.content.decode()).keys())
+        return httpx.Response(200, json=_anthropic_completion_body())
+
+    client = AsyncHTTPHandler()
+    client.client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+
+    await litellm.acompletion(
+        model="anthropic/claude-sonnet-4-6",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="test-key",
+        client=client,
+        max_tokens=10,
+    )
+
+    header_order: Final = [name.lower() for name in captured["header_order"]]
+    app_headers: Final = [
+        name for name in header_order if name not in ("host", "accept-encoding", "connection", "content-length")
+    ]
+    pinned: Final = tuple(name.lower() for name in ANTHROPIC_HEADER_ORDER if name.lower() in app_headers)
+    pinned_positions: Final = [app_headers.index(name) for name in pinned]
+    assert pinned_positions == sorted(pinned_positions)
+    assert str(captured["user_agent"]).startswith("claude-cli/")
+    body_keys: Final = captured["body_keys"]
+    pinned_body: Final = tuple(name for name in ANTHROPIC_BODY_FIELD_ORDER if name in body_keys)
+    assert body_keys[: len(pinned_body)] == list(pinned_body)
+
+
+@pytest.mark.asyncio
+async def test_acompletion_leaves_wire_untouched_when_compat_disabled(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("LITELLM_CLI_COMPAT_PROVIDERS", raising=False)
+    captured: dict = {}
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        captured["user_agent"] = request.headers.get("user-agent")
+        captured["body_keys"] = list(json.loads(request.content.decode()).keys())
+        return httpx.Response(200, json=_anthropic_completion_body())
+
+    client = AsyncHTTPHandler()
+    client.client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+
+    await litellm.acompletion(
+        model="anthropic/claude-sonnet-4-6",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="test-key",
+        client=client,
+        max_tokens=10,
+    )
+
+    assert not str(captured["user_agent"]).startswith("claude-cli/")
+
+
+def test_sync_completion_pins_cli_fingerprint_when_compat_enabled(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("LITELLM_CLI_COMPAT_PROVIDERS", "anthropic")
+    captured: dict = {}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        captured["user_agent"] = request.headers.get("user-agent")
+        captured["body_keys"] = list(json.loads(request.content.decode()).keys())
+        return httpx.Response(200, json=_anthropic_completion_body())
+
+    client = HTTPHandler()
+    client.client = httpx.Client(transport=httpx.MockTransport(handle))
+
+    litellm.completion(
+        model="anthropic/claude-sonnet-4-6",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="test-key",
+        client=client,
+        max_tokens=10,
+    )
+
+    assert str(captured["user_agent"]).startswith("claude-cli/")
+    body_keys: Final = captured["body_keys"]
+    pinned_body: Final = tuple(name for name in ANTHROPIC_BODY_FIELD_ORDER if name in body_keys)
+    assert body_keys[: len(pinned_body)] == list(pinned_body)

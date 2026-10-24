@@ -2,6 +2,9 @@ import ast
 import os
 
 ALLOWED_FILES = [
+    # The IDE bridge daemon builds one upstream client at startup through its factory, never per request.
+    "../../litellm/ide_bridge/server.py",
+    "./litellm/ide_bridge/server.py",
     # Lens data traffic owns one pool per app lifespan, isolated from model traffic and closed on shutdown.
     "../../litellm/tracing/remote.py",
     "./litellm/tracing/remote.py",

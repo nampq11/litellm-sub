@@ -504,6 +504,8 @@ ADD_MODEL_UNLISTED_PROVIDERS: Final = frozenset(
         "a2a_agent",
         "amazon_nova",
         "apertis",
+        # Fork-private provider; the upstream Add Model UI it would appear in is not part of this fork.
+        "antigravity",
         "aws_polly",
         "black_forest_labs",
         "charity_engine",

@@ -32,7 +32,10 @@ class PROXY_RTKTokenSaver(CustomLogger):
                 stats.percent_saved,
                 filters_used,
             )
-            updated_data: Final[dict[str, object]] = {**data, "messages": list(compressed)}  # mutable-ok: proxy pre-call hook return dict
+            updated_data: Final[dict[str, object]] = {  # mutable-ok: proxy pre-call hook return dict
+                **data,
+                "messages": list(compressed),
+            }
             return updated_data
 
         return None
