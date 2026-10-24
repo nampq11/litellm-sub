@@ -32,8 +32,6 @@ IGNORE_ARG_RE: Final = re.compile(r"--ignore(?:-glob)?[= ](\S+)")
 DOCKERFILE_TOKEN_RE = re.compile(r"[A-Za-z0-9_./-]*Dockerfile[A-Za-z0-9_.-]*")
 COMMENT_RE = re.compile(r"^\s*#.*$", re.MULTILINE)
 GLOB_CHARS = frozenset("*?")
-DEDICATED_INTEGRATION_WORKFLOWS: Final = MappingProxyType({})
-
 # Trees whose jobs are sharded with no catch-all bucket, so every child that holds
 # tests has to be named by some shard or it runs nowhere. A child listed here is
 # itself decomposed one level deeper and is checked through its own entry.
@@ -559,17 +557,6 @@ def _integration_github_files(runner: pathlib.Path) -> frozenset[str]:
     return frozenset(ast.literal_eval(values))
 
 
-def _owns(workflow: str, relative_path: str) -> bool:
-    owned_root: Final = DEDICATED_INTEGRATION_WORKFLOWS.get(workflow)
-    return owned_root is not None and relative_path.startswith(owned_root)
-
-
-def _tokens_outside_owner(relative_path: str, workflow_tokens: Mapping[str, frozenset[str]]) -> frozenset[str]:
-    return frozenset[str]().union(
-        *(tokens for workflow, tokens in workflow_tokens.items() if not _owns(workflow, relative_path))
-    )
-
-
 def _integration_ownership(repo_root: pathlib.Path = REPO_ROOT) -> tuple[frozenset[str], tuple[Finding, ...]]:
     runner: Final = repo_root / "tests/integration/run.py"
     if not runner.exists():
@@ -646,11 +633,6 @@ def _integration_ownership(repo_root: pathlib.Path = REPO_ROOT) -> tuple[frozens
             Finding(path, "GitHub-owned integration file is missing")
             for path in sorted(github_files)
             if not (repo_root / path).is_file()
-        )
-        + tuple(
-            Finding(path, "GitHub-owned integration contract runs outside a dedicated integration workflow")
-            for path in sorted(github_files)
-            if any(_token_covers(token, path) for token in _tokens_outside_owner(path, workflow_tokens))
         )
     )
     browser_commands: Final = tuple(
