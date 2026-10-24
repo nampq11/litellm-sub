@@ -54,7 +54,6 @@ from litellm.llms.bedrock.messages.invoke_transformations.anthropic_claude3_tran
 from litellm.llms.bedrock.files.transformation import BedrockFilesConfig
 from litellm.llms.anthropic.chat.transformation import AnthropicConfig
 from litellm.llms.anthropic.skills.transformation import AnthropicSkillsConfig
-from litellm.llms.anthropic.skills.transformation import AnthropicSkillsConfig
 from litellm.llms.openai.evals.transformation import OpenAIEvalsConfig
 from litellm.llms.mistral.files.transformation import MistralFilesConfig
 from litellm.llms.openai.vector_store_files.transformation import OpenAIVectorStoreFilesConfig
