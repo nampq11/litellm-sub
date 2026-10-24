@@ -55,8 +55,37 @@ test_paths:
       - tests/integration/sandbox/test_e2b_sandbox.py
       - tests/integration/test_oci_integration.py
       - tests/integration/test_oci_proxy_integration.py
+  - reason: >-
+      Built-image contract tests owned by the image-scan workflow removed in this fork's CI
+      prune; this fork publishes no images, so there is nothing for them to test against
+    paths:
+      - tests/integration/database/image
+
+  - reason: >-
+      Perf benchmarks for the a2a and extraction paths; the codspeed workflow that ran them was
+      removed in this fork's CI prune and nobody profiles them locally. Revisit only if a
+      regression hunt needs a baseline
+    paths:
+      - tests/benchmarks
+  - reason: >-
+      Core-distribution import smoke that belonged to the mcp dependency-resolution workflow
+      removed in this fork's CI prune; the all-extras install jobs in the lint workflow cover
+      the same packaging surface
+    paths:
+      - tests/base_sdk_tests
 
 dockerfiles:
+  - reason: >-
+      Removed with the image-scan workflow in this fork's CI prune: this fork publishes no
+      images, so nothing builds or scans them. The gateway image is covered below and the rest
+      are upstream release artifacts
+    paths:
+      - Dockerfile
+      - backend/Dockerfile
+      - docker/Dockerfile.non_root
+      - gateway/Dockerfile
+      - migrations/Dockerfile
+      - tests/e2e/claude_code/cron_vm/Dockerfile
   - reason: >-
       The Rust gateway image compiles the whole workspace in release mode, which is too slow for
       a per-pull-request job while the gateway binary is still being assembled; the Rust lint,

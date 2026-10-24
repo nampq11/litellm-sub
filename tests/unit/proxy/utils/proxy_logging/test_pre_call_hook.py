@@ -442,7 +442,6 @@ def test_every_pre_call_customlogger_is_deliberately_classified():
     judges_content = {
         "_OPTIONAL_PromptInjectionDetection",
         "_PROXY_AzureContentSafety",
-        "PROXY_RTKTokenSaver",
         "ENTERPRISE_BannedKeywords",
         "ENTERPRISE_BlockedUserList",
     }
@@ -457,6 +456,9 @@ def test_every_pre_call_customlogger_is_deliberately_classified():
         "SkillsInjectionHook",
         "_PROXY_LiteLLMManagedFiles",
         "_PROXY_LiteLLMManagedVectorStores",
+        # Rewrites request messages for token savings; a batch-file row is not a
+        # request, so it must never fire per record (and keeps passthrough uploads legal).
+        "PROXY_RTKTokenSaver",
     }
 
     from litellm.proxy.hooks import PROXY_HOOKS

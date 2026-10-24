@@ -32,7 +32,7 @@ IGNORE_ARG_RE: Final = re.compile(r"--ignore(?:-glob)?[= ](\S+)")
 DOCKERFILE_TOKEN_RE = re.compile(r"[A-Za-z0-9_./-]*Dockerfile[A-Za-z0-9_.-]*")
 COMMENT_RE = re.compile(r"^\s*#.*$", re.MULTILINE)
 GLOB_CHARS = frozenset("*?")
-DEDICATED_INTEGRATION_WORKFLOWS: Final = MappingProxyType({"image-scan.yml": "tests/integration/database/image/"})
+DEDICATED_INTEGRATION_WORKFLOWS: Final = MappingProxyType({})
 
 # Trees whose jobs are sharded with no catch-all bucket, so every child that holds
 # tests has to be named by some shard or it runs nowhere. A child listed here is
@@ -148,9 +148,7 @@ def _selection_for_scalar(scalar: Scalar) -> Selection:
 
 def _invoked_selections(scalars: Iterable[Scalar]) -> tuple[Selection, ...]:
     selected_scalars: Final = tuple(
-        scalar
-        for scalar in scalars
-        if scalar.key in TEST_PATH_KEYS or TEST_RUNNER_RE.search(scalar.value)
+        scalar for scalar in scalars if scalar.key in TEST_PATH_KEYS or TEST_RUNNER_RE.search(scalar.value)
     )
     selections: Final = tuple(_selection_for_scalar(scalar) for scalar in selected_scalars)
     return tuple(selection for selection in selections if selection.included)
