@@ -129,10 +129,10 @@ async def run_bridge(config: BridgeConfig) -> None:
     server: Final = build_server(config)
     setup_error: Final = apply_system_changes(config)
     if setup_error is not None:
-        print(f"bridge setup failed: {setup_error}", file=sys.stderr)
+        print(f"bridge setup failed: {setup_error}", file=sys.stderr)  # noqa: T201  # daemon startup is CLI output
         raise SystemExit(1)
     write_pidfile(config.pidfile_path, os.getpid())
-    print(
+    print(  # noqa: T201  # daemon startup is CLI output
         f"ide bridge listening on https://{config.listen_host}:{config.listen_port} "
         f"(gateway {config.gateway_base_url}, capture {config.capture_path})",
         file=sys.stderr,

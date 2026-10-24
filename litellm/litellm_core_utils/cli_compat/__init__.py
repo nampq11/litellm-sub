@@ -1,3 +1,12 @@
+"""Subscription CLI fingerprint compat for gateway-forwarded requests.
+
+Fingerprinting upstreams (Anthropic's claude-cli endpoints) flag requests whose
+header order, body field order, or User-Agent do not match the official client.
+Set ``LITELLM_CLI_COMPAT_PROVIDERS=anthropic`` (or ``LITELLM_CLI_COMPAT_ALL=1``)
+to pin the captured claude-cli wire image onto forwarded requests.
+``CLAUDE_USER_AGENT`` overrides the pinned User-Agent string when it drifts.
+"""
+
 from typing import Final
 
 from litellm.litellm_core_utils.cli_compat.ban_detection import (

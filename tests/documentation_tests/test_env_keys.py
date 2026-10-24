@@ -55,6 +55,22 @@ EXCLUDED_FORK_PRIVATE_VARS = {
     "ANTIGRAVITY_USER_AGENT",
 }
 
+# Fork-private subscription-stealth vars: CLI fingerprint compat, ban cooldown,
+# and the IDE bridge. Documented in the cli_compat module docstrings and
+# litellm/ide_bridge/config.py instead of the upstream docs.
+EXCLUDED_FORK_PRIVATE_VARS.update({
+    "LITELLM_BAN_COOLDOWN_SECONDS",
+    "LITELLM_CLI_COMPAT_ALL",
+    "LITELLM_CLI_COMPAT_PROVIDERS",
+    "LITELLM_BRIDGE_API_KEY",
+    "LITELLM_BRIDGE_DATA_DIR",
+    "LITELLM_BRIDGE_GATEWAY_URL",
+    "LITELLM_BRIDGE_HOST",
+    "LITELLM_BRIDGE_INSTALL_TRUST",
+    "LITELLM_BRIDGE_PORT",
+    "LITELLM_BRIDGE_ROUTE_HOSTS",
+})
+
 EXCLUDED_TERMINAL_VARS = {
     "TERM",
     "TERM_PROGRAM",

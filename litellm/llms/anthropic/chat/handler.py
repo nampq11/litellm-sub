@@ -501,7 +501,7 @@ class AnthropicChatCompletion(BaseLLM):
         transform_params: Final = {**optional_params, "is_vertex_request": is_vertex_request}
 
         def finish_request(
-            request_data: dict[str, object],
+            request_data: dict[str, object],  # mutable-ok: rewritten in place downstream
         ) -> tuple[dict[str, object], dict[str, object]]:  # mutable-ok: rewritten in place downstream
             """Filter beta headers and emit pre_call, returning `(headers, data)`.
 
@@ -527,7 +527,7 @@ class AnthropicChatCompletion(BaseLLM):
 
         async def acompletion_dispatch() -> "ModelResponse | CustomStreamWrapper":
             """Translate then send, so the provider config can inline remote media off the event loop."""
-            transformed_request: Final[dict[str, object]] = cast(
+            transformed_request = cast(  # cast-ok: transform_request returns an untyped body dict
                 "dict[str, object]",
                 await config.async_transform_request(
                     model=model,
@@ -536,7 +536,7 @@ class AnthropicChatCompletion(BaseLLM):
                     litellm_params=litellm_params,
                     headers=headers,
                 ),
-            )  # cast-ok: transform_request returns an untyped body dict
+            )
             request_headers, data = finish_request(transformed_request)
             wire_headers, wire_data = compat_wire(config.custom_llm_provider or "anthropic", request_headers, data)
             if (
@@ -591,7 +591,7 @@ class AnthropicChatCompletion(BaseLLM):
         if acompletion is True:
             return acompletion_dispatch()
         else:
-            transformed_request: Final[dict[str, object]] = cast(
+            transformed_request = cast(  # cast-ok: transform_request returns an untyped body dict
                 "dict[str, object]",
                 config.transform_request(
                     model=model,
@@ -600,7 +600,7 @@ class AnthropicChatCompletion(BaseLLM):
                     litellm_params=litellm_params,
                     headers=headers,
                 ),
-            )  # cast-ok: transform_request returns an untyped body dict
+            )
             request_headers, data = finish_request(transformed_request)
             wire_headers, wire_data = compat_wire(config.custom_llm_provider or "anthropic", request_headers, data)
             ## COMPLETION CALL
